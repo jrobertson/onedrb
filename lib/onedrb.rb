@@ -7,9 +7,48 @@
 require 'drb'
 require 'c32'
 
-# Note: The Server object can also use a default Hash object.
-#       Which allows the Client object to define what user-defined objects the server
-#       should host dynamically.
+# Note: The Server object can also use a default ServiceMgr object.
+#       Which allows multiple services (user-defined objects) to be
+#       hosted dynamically.
+
+
+class ServiceMgr
+
+  def initialize()
+    @services = {}
+  end
+
+
+  def call(service, methodname, *a)
+
+    proc1 = @services[service.to_sym].method(methodname.to_sym)
+    a.last.is_a?(Hash) ? proc1.call(*a[0..-2], **a.last) : proc1.call(*a)
+
+  end
+
+  def [](key)
+    @services[key]
+  end
+
+  def []=(key, value)
+    @services[key] = value
+
+    define_singleton_method key do
+      @services[key]
+    end
+  end
+
+  def services()
+    @services.map do |key, object|
+      [key, object.public_methods - Object.public_methods]
+    end
+  end
+
+  def method_missing(sym, *args)
+    puts 'servicemgr sym: ' + sym.inspect
+    puts 'args: ' + args.inspect
+  end
+end
 
 
 class OneDrbError < Exception
@@ -22,7 +61,7 @@ module OneDrb
     using ColouredText
 
     def initialize(host: '127.0.0.1', port: (49152..65535).to_a.sample.to_s,
-                    obj: Hash.new, log: nil)
+                    obj: ServiceMgr.new, log: nil)
 
       log.info self.class.to_s + '/initialize: active' if log
 
@@ -63,6 +102,25 @@ module OneDrb
 
       puts ('client connecting to port ' + port).info
       @obj = DRbObject.new_with_uri("druby://#{host}:#{port}")
+      parent = self
+      @obj&.services.each do |name, methods|
+
+        class_name = name.capitalize
+        klass = Object.const_set(class_name,Class.new)
+
+        klass.class_eval do
+          methods.each do |method_name|
+            define_method method_name do |*args|
+              parent.call name, method_name, *args
+            end
+          end
+        end
+
+        define_singleton_method name do
+          klass.new
+        end
+
+      end
 
     end
 
@@ -87,9 +145,24 @@ module OneDrb
       a = a1.map(&:last)
 
       client = OneDrb::Client.new host: hostname, port: port
-      proc1 = client[service].method(methodname.to_sym)
 
-      h.any? ? proc1.call(*a, **h) : proc1.call(*a)
+      if h.any? then
+
+        if a.any? then
+          client.call service.to_sym, methodname.to_sym, *a, **h
+        else
+          client.call service.to_sym, methodname.to_sym, **h
+        end
+
+      elsif a.any?
+
+        client.call service.to_sym, methodname.to_sym, *a
+
+      else
+
+        client.call service.to_sym, methodname.to_sym
+
+      end
 
     end
 
@@ -98,6 +171,8 @@ module OneDrb
     end
 
     def method_missing(sym, *args)
+
+      puts '@obj.class: ' + @obj.class.inspect
 
       if args.last.is_a?(Hash) then
         @obj.send(sym, *args[0..-2], **args.last)

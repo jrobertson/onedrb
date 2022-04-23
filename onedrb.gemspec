@@ -1,6 +1,6 @@
 Gem::Specification.new do |s|
   s.name = 'onedrb'
-  s.version = '0.2.0'
+  s.version = '0.3.0'
   s.summary = 'Makes it convenient to make an object remotely accessible.'
   s.authors = ['James Robertson']
   s.files = Dir['lib/onedrb.rb']
