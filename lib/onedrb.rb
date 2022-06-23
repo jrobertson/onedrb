@@ -102,9 +102,14 @@ module OneDrb
       puts ('client connecting to port ' + port).info
       @obj = DRbObject.new_with_uri("druby://#{host}:#{port}")
       parent = self
-      @obj&.services.each do |name, methods|
 
-        make_class(name, methods, parent)
+      if @obj.respond_to? :services then
+
+        @obj&.services.each do |name, methods|
+
+          make_class(name, methods, parent)
+
+        end
 
       end
 
@@ -201,3 +206,5 @@ module OneDrb
   end
 
 end
+
+
